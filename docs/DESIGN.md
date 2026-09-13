@@ -1,0 +1,3 @@
+# TCP SERVER DESIGN DOCUMENTATION
+## Key Terms
+- **SO_REUSEADDR:** This is a used to "unblock" the **TIME_WAIT** state triggered by the OS after an active closer terminates a TCP connection (typically the server). The **TIME_WAIT** is a time window that may last as long as 2 X Maximum Segment LifeTime(MSL). It exists because of the possibility that that a delayed packet may be strangling in the network that belongs to the previous connection, so it blocks a server from binding to the port until the time is elapsed. **SO_REUSEADDR** overrides the blocking behaviour and allows a server to bind to that port regardless, while the **TIME_WAIT** still goes on.
