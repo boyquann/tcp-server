@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) {
 		}
 
 		else {
-			fprintf(stderr, "Port Number %d out of range\n", port);
+			fprintf(stderr, "Port Number %ld out of range\n", port);
 			return 1;
 		}
 	}
