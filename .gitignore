@@ -1,0 +1,10 @@
+build/
+*.o
+*.swp
+*.swo
+*.a
+vgcore.*
+core.*
+core
+__pycache__/
+
