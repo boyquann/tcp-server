@@ -2,7 +2,7 @@ SHELL:= /bin/bash
 .SHELLFLAGS:= -eu -o pipefail -c
 .DEFAULT_GOAL:= debug
 .DELETE_ON_ERROR:
-.PHONY: debug vg release faultinj analyze tsan fuzz test check-full check check-purity canaries valgrind clean help artifacts
+.PHONY: debug vg release faultinj analyze tsan fuzz test check-full check check-purity canaries valgrind clean help artifacts unit
 
 CC:= gcc
 PYTHON:= python3
@@ -50,7 +50,7 @@ $(error Unknown VARIANT '$(VARIANT)'. Use: debug, release, analyse, vg, faultinj
 endif
 
 MAIN_SRC:= src/main.c
-MOD_SRCS:= src/clock.c src/config.c src/errclass.c src/log.c 
+MOD_SRCS:= src/clock.c src/config.c src/errclass.c src/log.c
 MAIN_OBJ:= $(MAIN_SRC:src/%.c=$(BUILD)/%.o)
 MOD_OBJS:= $(MOD_SRCS:src/%.c=$(BUILD)/%.o)
 DEPS:= $(MAIN_OBJ:.o=.d) $(MOD_OBJS:.o=.d)
@@ -66,13 +66,44 @@ TCPD:= $(BUILD)/tcpd
 $(TCPD) : $(MAIN_OBJ) $(MOD_OBJS)
 	$(CC) $(VLDFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
-artifacts: $(TCPD)
+artifacts : $(TCPD) $(TEST_BINS)
 
+TEST_SRCS:= $(wildcard tests/unit/test_*.c)
+TEST_OBJS:= $(TEST_SRCS:tests/unit/%.c=$(BUILD)/tests/%.o)
+TEST_BINS:= $(TEST_OBJS:.o=)
+DEPS += $(TEST_OBJS:.o=.d)
 
+$(BUILD)/tests:
+	mkdir -p $@
 
+$(BUILD)/tests/%.o : tests/unit/%.c | $(BUILD)/tests
+	$(CC) $(CSTD) $(CPPDEFS) $(CPPFLAGS) $(WARN) $(VFLAGS) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
+$(BUILD)/tests/% : $(BUILD)/tests/%.o $(MOD_OBJS)
+	$(CC) $(VLDFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
+unit : $(TEST_BINS)
+	@failed=0; \
+	for t in $(TEST_BINS); do \
+		$$t || failed=1; \
+	done; \
+	exit $$failed
 
+VARIANTS:= debug faultinj analyze release vg
+
+$(VARIANTS):
+	@$(MAKE) --no-print-directory VARIANT=$@ artifacts
+
+tsan:
+	@echo "tsan: not applicable until Phase 4"
+
+fuzz:
+	@echo "fuzz: not applicable until Phase 3"
+
+test : unit
+
+check:
+	@$(MAKE) --no-print-directory VARIANT=debug artifacts unit
 
 
 
