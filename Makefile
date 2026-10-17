@@ -2,7 +2,7 @@ SHELL:= /bin/bash
 .SHELLFLAGS:= -eu -o pipefail -c
 .DEFAULT_GOAL:= debug
 .DELETE_ON_ERROR:
-.PHONY: debug vg release faultinj analyze tsan fuzz test check-full check check-purity canaries valgrind clean help artifacts unit
+.PHONY: debug vg release faultinj analyze tsan fuzz test check-full check check-purity canaries valgrind clean help artifacts unit vg-run 
 
 CC:= gcc
 PYTHON:= python3
@@ -82,13 +82,6 @@ $(BUILD)/tests/%.o : tests/unit/%.c | $(BUILD)/tests
 $(BUILD)/tests/% : $(BUILD)/tests/%.o $(MOD_OBJS)
 	$(CC) $(VLDFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
-unit : $(TEST_BINS)
-	@failed=0; \
-	for t in $(TEST_BINS); do \
-		$$t || failed=1; \
-	done; \
-	exit $$failed
-
 VARIANTS:= debug faultinj analyze release vg
 
 $(VARIANTS):
@@ -104,6 +97,49 @@ test : unit
 
 check:
 	@$(MAKE) --no-print-directory VARIANT=debug artifacts unit
+
+RUN_WITH:=
+
+unit vg-run : $(TEST_BINS)
+	@failed=0 \
+	for t in $(TEST_BINS); do \
+		$(RUN_WITH) $$t || failed=1; \
+	done; \
+	exit $$failed
+
+vg-run : RUN_WITH = $(VALGRIND)
+
+valgrind:
+	@$(MAKE) --no-print-directory VARIANT=vg vg-run
+
+check-full : check
+	@$(MAKE) --no-print-directory VARIANT=vg vg-run
+	@$(MAKE) --no-print-directory VARIANT=analyze artifacts
+	@$(MAKE) --no-print-directory VARIANT=release unit
+	@$(MAKE) --no-print-directory VARIANT=tsan fuzz
+
+clean:
+	rm -rf build
+
+help:
+	@echo "Build variants (default: debug):"
+	@echo "   debug          ASan and UBSan, no optimisation"
+	@echo "   faultinj       debug and fault injection"
+	@echo "   vg             no sanitizers, for Valgrind"
+	@echo "   release        -O2, for benchmarks"
+	@echo "   analyze        GCC static analyzer"
+	@echo "Checks:"
+	@echo "   unit           build and run unit tests (urrent VARIANT)"
+	@echo "   test           all tests for the current VARIANT"
+	@echo "   valgrind       unit tests under Valgrind"
+	@echo "   check          debug build and tests"
+	@echo "   check-full     every check across every variant"
+	@echo "Other:"
+	@echo "   clean          delete the build/ directory containing all variants"
+	@echo "Options: VARIANT=<name> WERROR=0"
+
+
+
 
 
 
