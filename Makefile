@@ -2,7 +2,7 @@ SHELL:= /bin/bash
 .SHELLFLAGS:= -eu -o pipefail -c
 .DEFAULT_GOAL:= debug
 .DELETE_ON_ERROR:
-.PHONY: debug vg release faultinj analyze tsan fuzz test check-full check check-purity canaries valgrind clean help artifacts unit vg-run 
+.PHONY: canaries debug vg release faultinj analyze tsan fuzz test check-full check check-purity canaries valgrind clean help artifacts unit vg-run 
 
 CC:= gcc
 PYTHON:= python3
@@ -96,12 +96,12 @@ fuzz:
 test : unit
 
 check:
-	@$(MAKE) --no-print-directory VARIANT=debug artifacts unit
+	@$(MAKE) --no-print-directory VARIANT=debug artifacts unit canaries
 
 RUN_WITH:=
 
 unit vg-run : $(TEST_BINS)
-	@failed=0 \
+	@failed=0; \
 	for t in $(TEST_BINS); do \
 		$(RUN_WITH) $$t || failed=1; \
 	done; \
@@ -116,8 +116,31 @@ check-full : check
 	@$(MAKE) --no-print-directory VARIANT=vg vg-run
 	@$(MAKE) --no-print-directory VARIANT=analyze artifacts
 	@$(MAKE) --no-print-directory VARIANT=release unit
-	@$(MAKE) --no-print-directory VARIANT=tsan fuzz
+	@$(MAKE) --no-print-directory tsan fuzz
 
+CANARY_DIR:= $(BUILD)/canaries
+CANARY_BASE:= $(CSTD) $(CPPDEFS) -O0 -g
+CANARIES:= asan_heap vg_fd vg_leak ubsan_overflow
+CANARY_BINS:= $(CANARIES:%=$(CANARY_DIR)/%)
+
+$(CANARY_DIR):
+	mkdir -p $@
+
+$(CANARY_DIR)/%: tests/tooling/canary_%.c | $(CANARY_DIR)
+	$(CC) $(CANARY_BASE) $(CANARY_FLAGS) $< -o $@
+
+$(CANARY_DIR)/asan_heap: CANARY_FLAGS:= $(SAN) -fno-sanitize-recover=all
+$(CANARY_DIR)/ubsan_overflow: CANARY_FLAGS:= -fsanitize=undefined -fno-sanitize-recover=all
+$(CANARY_DIR)/vg_leak: CANARY_FLAGS:= 
+$(CANARY_DIR)/vg_fd: CANARY_FLAGS:=
+
+canaries : $(CANARY_BINS)
+	@tests/tooling/run_canary.sh asan must-fail "heap-buffer-overflow" $(CANARY_DIR)/asan_heap
+	@tests/tooling/run_canary.sh ubsan must-fail "signed integer overflow" $(CANARY_DIR)/ubsan_overflow
+	@tests/tooling/run_canary.sh vg-leak must-fail "definitely lost" $(VALGRIND) $(CANARY_DIR)/vg_leak
+	@tests/tooling/run_canary.sh vg-fd must-fail "Open file descriptor" $(VALGRIND) $(CANARY_DIR)/vg_fd
+	@tests/tooling/run_canary.sh analyzer must-fail "analyzer-use-after-free" \
+		$(CC) $(CANARY_BASE) -fanalyzer -Werror -c tests/tooling/canary_analyzer_uaf.c -o /dev/null
 clean:
 	rm -rf build
 
@@ -139,14 +162,4 @@ help:
 	@echo "Options: VARIANT=<name> WERROR=0"
 
 
-
-
-
-
-
-
-
-
 -include $(DEPS)
-
-
