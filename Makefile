@@ -2,7 +2,7 @@ SHELL:= /bin/bash
 .SHELLFLAGS:= -eu -o pipefail -c
 .DEFAULT_GOAL:= debug
 .DELETE_ON_ERROR:
-.PHONY: canaries debug vg release faultinj analyze tsan fuzz test check-full check check-purity canaries valgrind clean help artifacts unit vg-run 
+.PHONY: check-purity purity-run canaries debug vg release faultinj analyze tsan fuzz test check-full check check-purity canaries valgrind clean help artifacts unit vg-run 
 
 CC:= gcc
 PYTHON:= python3
@@ -97,6 +97,7 @@ test : unit
 
 check:
 	@$(MAKE) --no-print-directory VARIANT=debug artifacts unit canaries
+	@$(MAKE) --no-print-directory check-purity
 
 RUN_WITH:=
 
@@ -141,6 +142,21 @@ canaries : $(CANARY_BINS)
 	@tests/tooling/run_canary.sh vg-fd must-fail "Open file descriptor" $(VALGRIND) $(CANARY_DIR)/vg_fd
 	@tests/tooling/run_canary.sh analyzer must-fail "analyzer-use-after-free" \
 		$(CC) $(CANARY_BASE) -fanalyzer -Werror -c tests/tooling/canary_analyzer_uaf.c -o /dev/null
+
+PURE_SRCS:=
+PURE_OBJS:=$(PURE_SRCS:src/%.c=$(BUILD)/%.o)
+
+$(CANARY_DIR)/impure.o: tests/tooling/canary_impure.c| $(CANARY_DIR)
+	$(CC) $(CANARY_BASE) -O2 -c $< -o $@
+
+check-purity:
+	@$(MAKE) --no-print-directory VARIANT=release purity-run
+
+purity-run: $(PURE_OBJS) $(CANARY_DIR)/impure.o
+	@tests/tooling/check_purity.sh $(PURE_OBJS)
+	@tests/tooling/run_canary.sh purity must-fail "write" \
+		tests/tooling/check_purity.sh $(CANARY_DIR)/impure.o
+
 clean:
 	rm -rf build
 
